@@ -25,15 +25,18 @@ class Person(Scraper):
         accomplishments=None,
         company=None,
         job_title=None,
+        headline=None,
         contacts=None,
         driver=None,
         get=True,
         scrape=True,
         close_on_complete=True,
         time_to_wait_after_login=0,
+        connections=True,
     ):
         self.linkedin_url = linkedin_url
         self.name = name
+        self.headline = headline
         self.about = about or []
         self.experiences = experiences or []
         self.educations = educations or []
@@ -61,7 +64,7 @@ class Person(Scraper):
         self.driver = driver
 
         if scrape:
-            self.scrape(close_on_complete)
+            self.scrape(close_on_complete, connections=connections)
 
     def add_about(self, about):
         self.about.append(about)
@@ -84,9 +87,9 @@ class Person(Scraper):
     def add_contact(self, contact):
         self.contacts.append(contact)
 
-    def scrape(self, close_on_complete=True):
+    def scrape(self, close_on_complete=True, connections=True):
         if self.is_signed_in():
-            self.scrape_logged_in(close_on_complete=close_on_complete)
+            self.scrape_logged_in(close_on_complete=close_on_complete, connections=connections)
         else:
             print("you are not logged in!")
 
@@ -319,6 +322,41 @@ class Person(Scraper):
         self.name = top_panel.find_element(By.TAG_NAME, "h1").text
         self.location = top_panel.find_element(By.XPATH, "//*[@class='text-body-small inline t-black--light break-words']").text
 
+    def get_headline(self):
+        try:
+            # Try to find the headline element - it's usually in a div with specific classes
+            # LinkedIn often uses classes like 'text-body-medium break-words' for the headline
+            headline_selectors = [
+                "//div[contains(@class, 'text-body-medium') and contains(@class, 'break-words')]",
+                "//div[@class='text-body-medium break-words']",
+                "//*[contains(@class, 'pv-text-details__left-panel')]//div[contains(@class, 'text-body-medium')]",
+                "//section[contains(@class, 'pv-top-card')]//div[contains(@class, 'text-body-medium')]"
+            ]
+            
+            for selector in headline_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        text = element.text.strip()
+                        # Filter out elements that are clearly not headlines
+                        if (text and 0 < len(text) < 200 and  # Headlines are usually short
+                            not text.startswith('http') and  # Not a URL
+                            not text.isdigit() and  # Not just numbers
+                            '·' not in text and  # Not location/connection info
+                            'connections' not in text.lower() and
+                            'followers' not in text.lower() and
+                            text != self.name):  # Not the person's name
+                            self.headline = text
+                            return
+                except NoSuchElementException:
+                    continue
+            
+            # If no headline found with the above selectors, set to None
+            self.headline = None
+            
+        except Exception as e:
+            self.headline = None
+
     def get_about(self):
         try:
             about = self.driver.find_element(By.ID,"about").find_element(By.XPATH,"..").find_element(By.CLASS_NAME,"display-flex").text
@@ -326,7 +364,7 @@ class Person(Scraper):
             about=None
         self.about = about
 
-    def scrape_logged_in(self, close_on_complete=True):
+    def scrape_logged_in(self, close_on_complete=True, connections=True):
         driver = self.driver
         duration = None
 
@@ -344,6 +382,9 @@ class Person(Scraper):
         # get name and location
         self.get_name_and_location()
 
+        # get headline
+        self.get_headline()
+
         self.open_to_work = self.is_open_to_work()
 
         # get about
@@ -355,17 +396,8 @@ class Person(Scraper):
             "window.scrollTo(0, Math.ceil(document.body.scrollHeight/1.5));"
         )
 
-        # get experience
-        self.get_experiences()
-
-        # get education
-        self.get_educations()
-
-        driver.get(self.linkedin_url)
-
-        # get interest
+        # get interest (from main page before navigating away)
         try:
-
             _ = WebDriverWait(driver, self.__WAIT_FOR_ELEMENT_TIMEOUT).until(
                 EC.presence_of_element_located(
                     (
@@ -387,7 +419,7 @@ class Person(Scraper):
         except:
             pass
 
-        # get accomplishment
+        # get accomplishment (from main page before navigating away)
         try:
             _ = WebDriverWait(driver, self.__WAIT_FOR_ELEMENT_TIMEOUT).until(
                 EC.presence_of_element_located(
@@ -412,24 +444,31 @@ class Person(Scraper):
         except:
             pass
 
-        # get connections
-        try:
-            driver.get("https://www.linkedin.com/mynetwork/invite-connect/connections/")
-            _ = WebDriverWait(driver, self.__WAIT_FOR_ELEMENT_TIMEOUT).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "mn-connections"))
-            )
-            connections = driver.find_element(By.CLASS_NAME, "mn-connections")
-            if connections is not None:
-                for conn in connections.find_elements(By.CLASS_NAME, "mn-connection-card"):
-                    anchor = conn.find_element(By.CLASS_NAME, "mn-connection-card__link")
-                    url = anchor.get_attribute("href")
-                    name = conn.find_element(By.CLASS_NAME, "mn-connection-card__details").find_element(By.CLASS_NAME, "mn-connection-card__name").text.strip()
-                    occupation = conn.find_element(By.CLASS_NAME, "mn-connection-card__details").find_element(By.CLASS_NAME, "mn-connection-card__occupation").text.strip()
+        # get experience (navigate to experience page)
+        self.get_experiences()
 
-                    contact = Contact(name=name, occupation=occupation, url=url)
-                    self.add_contact(contact)
-        except:
-            connections = None
+        # get education (navigate to education page)
+        self.get_educations()
+
+        # get connections (only if connections=True)
+        if connections:
+            try:
+                driver.get("https://www.linkedin.com/mynetwork/invite-connect/connections/")
+                _ = WebDriverWait(driver, self.__WAIT_FOR_ELEMENT_TIMEOUT).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "mn-connections"))
+                )
+                connections_element = driver.find_element(By.CLASS_NAME, "mn-connections")
+                if connections_element is not None:
+                    for conn in connections_element.find_elements(By.CLASS_NAME, "mn-connection-card"):
+                        anchor = conn.find_element(By.CLASS_NAME, "mn-connection-card__link")
+                        url = anchor.get_attribute("href")
+                        name = conn.find_element(By.CLASS_NAME, "mn-connection-card__details").find_element(By.CLASS_NAME, "mn-connection-card__name").text.strip()
+                        occupation = conn.find_element(By.CLASS_NAME, "mn-connection-card__details").find_element(By.CLASS_NAME, "mn-connection-card__occupation").text.strip()
+
+                        contact = Contact(name=name, occupation=occupation, url=url)
+                        self.add_contact(contact)
+            except:
+                pass
 
         if close_on_complete:
             driver.quit()
@@ -457,8 +496,9 @@ class Person(Scraper):
             return None
 
     def __repr__(self):
-        return "<Person {name}\n\nAbout\n{about}\n\nExperience\n{exp}\n\nEducation\n{edu}\n\nInterest\n{int}\n\nAccomplishments\n{acc}\n\nContacts\n{conn}>".format(
+        return "<Person {name}\n\nHeadline\n{headline}\n\nAbout\n{about}\n\nExperience\n{exp}\n\nEducation\n{edu}\n\nInterest\n{int}\n\nAccomplishments\n{acc}\n\nContacts\n{conn}>".format(
             name=self.name,
+            headline=self.headline,
             about=self.about,
             exp=self.experiences,
             edu=self.educations,
