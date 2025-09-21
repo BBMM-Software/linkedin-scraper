@@ -70,8 +70,11 @@ class Scraper:
         sleep(int(duration))
 
     def focus(self):
-        self.driver.execute_script('alert("Focus window")')
-        self.driver.switch_to.alert.accept()
+        try:
+            self.driver.execute_script('alert("Focus window")')
+            self.driver.switch_to.alert.accept()
+        except Exception:
+            pass
 
     def mouse_click(self, elem):
         action = webdriver.ActionChains(self.driver)
