@@ -1,5 +1,6 @@
 from os.path import dirname, basename, isfile
 from .person import Person
+from .optimized_person import OptimizedPerson
 from .objects import Institution, Experience, Education, Contact
 from .company import Company
 from .jobs import Job

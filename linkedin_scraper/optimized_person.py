@@ -17,7 +17,7 @@ class OptimizedPerson(Scraper):
     """
 
     __TOP_CARD = "main"
-    __WAIT_FOR_ELEMENT_TIMEOUT = 5
+    __WAIT_FOR_ELEMENT_TIMEOUT = 1
 
     def __init__(
             self,
@@ -118,13 +118,12 @@ class OptimizedPerson(Scraper):
             for selector in experience_selectors:
                 try:
                     experience_section = self.driver.find_element(By.XPATH, selector)
-                    print(f"✅ Found experience section using selector: {selector}")
                     break
                 except NoSuchElementException:
                     continue
 
             if not experience_section:
-                print("⚠️ No experience section found on homepage")
+                print("No experience section found on homepage")
                 return
 
             # Look for experience items within the section
@@ -140,40 +139,34 @@ class OptimizedPerson(Scraper):
                 try:
                     experience_items = experience_section.find_elements(By.XPATH, selector)
                     if experience_items:
-                        print(f"✅ Found {len(experience_items)} experience items using selector: {selector}")
                         break
                 except NoSuchElementException:
                     continue
 
             if not experience_items:
-                print("⚠️ No experience items found in section")
+                print("No experience items found in section")
                 return
 
             for i, item in enumerate(experience_items):
                 try:
                     self._parse_experience_item(item, i)
                 except Exception as e:
-                    print(f"⚠️ Error parsing experience item {i}: {e}")
+                    print(f"Error parsing experience item {i}: {e}")
                     continue
 
         except Exception as e:
-            print(f"❌ Error getting experiences from homepage: {e}")
+            print(f"Error getting experiences from homepage: {e}")
 
     def _parse_experience_item(self, item, index):
         """Parse individual experience item from the homepage"""
         try:
-            # Try to extract text content
             item_text = item.text.strip()
             if not item_text:
                 return
 
-            print(f"📄 Experience item {index} text preview: {item_text[:200]}...")
+            # links = item.find_elements(By.TAG_NAME, "a")
+            # spans = item.find_elements(By.TAG_NAME, "span")
 
-            # Look for clickable elements that might contain structured data
-            links = item.find_elements(By.TAG_NAME, "a")
-            spans = item.find_elements(By.TAG_NAME, "span")
-
-            # Try to extract basic information from text
             lines = [line.strip() for line in item_text.split('\n') if line.strip()]
 
             if len(lines) >= 2:
@@ -200,7 +193,6 @@ class OptimizedPerson(Scraper):
                 from_date = ""
                 to_date = ""
                 if duration:
-                    # Simple parsing - can be improved
                     if '–' in duration or '-' in duration:
                         parts = duration.replace('–', '-').split('-')
                         if len(parts) >= 2:
@@ -219,10 +211,9 @@ class OptimizedPerson(Scraper):
                 )
 
                 self.add_experience(experience)
-                print(f"✅ Added experience: {position_title} at {company}")
 
         except Exception as e:
-            print(f"⚠️ Error parsing experience item: {e}")
+            print(f"Error parsing experience item: {e}")
 
     def get_educations_from_homepage(self):
         """
@@ -230,7 +221,6 @@ class OptimizedPerson(Scraper):
         instead of navigating to the details/education page.
         """
         try:
-            # Look for education section on the main page
             education_selectors = [
                 "//section[contains(@data-section, 'education')]",
                 "//section[.//span[contains(text(), 'Education')]]",
@@ -252,7 +242,6 @@ class OptimizedPerson(Scraper):
                 print("No education section found on homepage")
                 return
 
-            # Look for education items within the section
             education_items = []
             item_selectors = [
                 ".//div[contains(@class, 'pvs-list__paged-list-item')]",
@@ -398,8 +387,7 @@ class OptimizedPerson(Scraper):
                 )
             )
         )
-        self.focus()
-        self.wait(5)
+        self.wait(1)
 
         # get name and location
         self.get_name_and_location()
